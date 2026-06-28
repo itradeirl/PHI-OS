@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
-const FMP_KEY = "rrVewhE6AuWGOSrvEiUZUJ7RGSxNHmXl";
+const TWELVE_KEY = "bf279a0df6144d37aa525b6629486e1a";
 
 const PHI_PRINCIPLES = [
   "Buy businesses, not tickers.",
@@ -215,43 +215,46 @@ export default function PHIOS() {
     setLoading(true);
     try {
       const tickers = BASE_WATCHLIST.map(s => s.ticker).join(",");
-      const res = await fetch(`https://financialmodelingprep.com/stable/quote?symbol=${tickers}&apikey=${FMP_KEY}`);
+      // Twelve Data batch quote endpoint
+      const res = await fetch(`https://api.twelvedata.com/quote?symbol=${tickers}&apikey=${TWELVE_KEY}`);
       const data = await res.json();
-      if (Array.isArray(data)) {
-        const map = {};
-        data.forEach(q => {
-          map[q.symbol] = {
-            price: q.price,
-            daily: q.changesPercentage,
-            change: q.change,
-            high52: q.yearHigh,
-            low52: q.yearLow,
-            marketCap: q.marketCap,
-            pe: q.pe,
-            volume: q.volume,
-            open: q.open,
-            dayHigh: q.dayHigh,
-            dayLow: q.dayLow,
-            prevClose: q.previousClose,
+      const map = {};
+      // Twelve Data returns object keyed by ticker when multiple symbols
+      for (const ticker of BASE_WATCHLIST.map(s => s.ticker)) {
+        const q = data[ticker];
+        if (q && !q.code) {
+          map[ticker] = {
+            price: parseFloat(q.close),
+            daily: parseFloat(q.percent_change),
+            change: parseFloat(q.change),
+            high52: parseFloat(q.fifty_two_week?.high),
+            low52: parseFloat(q.fifty_two_week?.low),
+            marketCap: null,
+            pe: null,
+            volume: parseFloat(q.volume),
+            open: parseFloat(q.open),
+            dayHigh: parseFloat(q.high),
+            dayLow: parseFloat(q.low),
+            prevClose: parseFloat(q.previous_close),
           };
-        });
-        setLiveData(map);
-        setLastUpdated(new Date());
+        }
       }
+      setLiveData(map);
+      setLastUpdated(new Date());
     } catch (e) {
-      console.error("FMP fetch error:", e);
+      console.error("Twelve Data fetch error:", e);
     }
 
-    // Fetch sparklines for top 8
+    // Fetch sparklines for top 8 using time_series
     try {
       const topTickers = BASE_WATCHLIST.slice(0, 8).map(s => s.ticker);
       const sparks = {};
       await Promise.all(topTickers.map(async ticker => {
         try {
-          const r = await fetch(`https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${ticker}&limit=30&apikey=${FMP_KEY}`);
+          const r = await fetch(`https://api.twelvedata.com/time_series?symbol=${ticker}&interval=1day&outputsize=20&apikey=${TWELVE_KEY}`);
           const d = await r.json();
-          if (d.historical) {
-            sparks[ticker] = d.historical.slice(0, 20).reverse().map(h => h.close);
+          if (d.values) {
+            sparks[ticker] = d.values.reverse().map(v => parseFloat(v.close));
           }
         } catch {}
       }));
@@ -816,7 +819,7 @@ export default function PHIOS() {
                   <div style={S.cardTitle}>Data Connection</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80" }} />
-                    <span style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Financial Modeling Prep API — Connected</span>
+                    <span style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Twelve Data API — Connected</span>
                     <span style={{ fontSize: 11, color: "#475569", marginLeft: "auto" }}>Live prices · 19 stocks · Refreshes every 5 min</span>
                   </div>
                 </div>
@@ -842,6 +845,4 @@ export default function PHIOS() {
 }
 
 
-
-
-This chat has 95 of 100 images (including PDF pages). Consider starting a new
+This chat ha
