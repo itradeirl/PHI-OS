@@ -36,6 +36,7 @@ const BASE_WATCHLIST = [
   { ticker: "SMR", company: "NuScale Power", tier: "Speculative", theme: "SMR Nuclear", sector: "Energy", iws: 76, buyReadiness: 45, decision: "WAIT", swingHigh: 32.41, swingLow: 7.80, position: 0.02 },
   { ticker: "SYM", company: "Symbotic Inc.", tier: "Speculative", theme: "Automation/Robotics", sector: "Robotics", iws: 82, buyReadiness: 65, decision: "WATCH", swingHigh: 54.50, swingLow: 14.89, position: 0.02 },
 ];
+  { ticker: "BTC/USD", company: "Bitcoin", tier: "Speculative", theme: "Crypto", sector: "Digital Assets", iws: 75, buyReadiness: 60, decision: "WATCH", swingHigh: 109000, swingLow: 49000, position: 0.02 },
 
 const IWS_SCORES = [
   { ticker: "NVDA", moat: 20, leadership: 10, financial: 15, growth: 15, industry: 10, institutional: 10, valuation: 8, technical: 10 },
