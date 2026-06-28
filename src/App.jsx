@@ -215,7 +215,7 @@ export default function PHIOS() {
     setLoading(true);
     try {
       const tickers = BASE_WATCHLIST.map(s => s.ticker).join(",");
-      const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/${tickers}?apikey=${FMP_KEY}`);
+      const res = await fetch(`https://financialmodelingprep.com/stable/quote?symbol=${tickers}&apikey=${FMP_KEY}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         const map = {};
@@ -248,7 +248,7 @@ export default function PHIOS() {
       const sparks = {};
       await Promise.all(topTickers.map(async ticker => {
         try {
-          const r = await fetch(`https://financialmodelingprep.com/api/v3/historical-price-full/${ticker}?timeseries=30&apikey=${FMP_KEY}`);
+          const r = await fetch(`https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${ticker}&limit=30&apikey=${FMP_KEY}`);
           const d = await r.json();
           if (d.historical) {
             sparks[ticker] = d.historical.slice(0, 20).reverse().map(h => h.close);
@@ -840,3 +840,8 @@ export default function PHIOS() {
     </div>
   );
 }
+
+
+
+
+This chat has 95 of 100 images (including PDF pages). Consider starting a new
