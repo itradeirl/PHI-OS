@@ -222,13 +222,13 @@ export default function PHIOS() {
       // Twelve Data returns object keyed by ticker when multiple symbols
       for (const ticker of BASE_WATCHLIST.map(s => s.ticker)) {
         const q = data[ticker];
-        if (q && !q.code) {
+       if (q && !q.code && !q.status) {
           map[ticker] = {
             price: parseFloat(q.close),
             daily: parseFloat(q.percent_change),
             change: parseFloat(q.change),
-            high52: parseFloat(q.fifty_two_week?.high),
-            low52: parseFloat(q.fifty_two_week?.low),
+           high52: q.fifty_two_week ? parseFloat(q.fifty_two_week.high) : null,
+            low52: q.fifty_two_week ? parseFloat(q.fifty_two_week.low) : null,
             marketCap: null,
             pe: null,
             volume: parseFloat(q.volume),
