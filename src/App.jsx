@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
-const TWELVE_KEY = "bf279a0df6144d37aa525b6629486e1a";
+const TWELVE_KEY = "256cd92ca1ec4011a4e8973374560976";
 const OPENROUTER_KEY = "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";
 
 const PHI_PRINCIPLES = [
