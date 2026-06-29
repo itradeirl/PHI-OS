@@ -421,9 +421,9 @@ PHI PRINCIPLE: (one relevant PHI principle for today)
 
 Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff. Indygo should be able to close the laptop after reading this and know exactly what to do.`;
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+     const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_KEY}` },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 1000,
