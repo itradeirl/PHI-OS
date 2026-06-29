@@ -241,9 +241,8 @@ export default function PHIOS() {
       const proxyUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${stockTickers}&fields=regularMarketPrice,regularMarketChangePercent,regularMarketChange,fiftyTwoWeekHigh,fiftyTwoWeekLow,regularMarketVolume`;
       
       // Use allorigins as CORS proxy
-      const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(proxyUrl)}`);
-      const raw = await res.json();
-      const data = JSON.parse(raw.contents);
+      const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(proxyUrl)}`);
+const data = await res.json();
       
       const map = {};
       if (data?.quoteResponse?.result) {
