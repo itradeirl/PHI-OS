@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 const TWELVE_KEY = "bf279a0df6144d37aa525b6629486e1a";
 const OPENROUTER_KEY = "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";
+
 const PHI_PRINCIPLES = [
   "Buy businesses, not tickers.",
   "Patience is an investment strategy.",
@@ -255,23 +256,27 @@ export default function PHIOS() {
   const fetchLiveData = useCallback(async () => {
     setLoading(true);
     try {
-      const tickers = BASE_WATCHLIST.map(s => s.ticker).join(",");
-      // Twelve Data batch quote endpoint
-      const res = await fetch(`https://api.twelvedata.com/quote?symbol=${tickers}&apikey=${TWELVE_KEY}`);
+      // Fetch stocks only (not BTC/USD via Twelve Data stocks endpoint)
+      const stockTickers = BASE_WATCHLIST
+        .filter(s => s.ticker !== "BTC/USD")
+        .map(s => s.ticker)
+        .join(",");
+
+      const res = await fetch(
+        `https://api.twelvedata.com/quote?symbol=${stockTickers}&apikey=${TWELVE_KEY}`
+      );
       const data = await res.json();
       const map = {};
-      // Twelve Data returns object keyed by ticker when multiple symbols
-      for (const ticker of BASE_WATCHLIST.map(s => s.ticker)) {
-        const q = data[ticker];
-        if (q && !q.code && !q.status) {
-          map[ticker] = {
+
+      for (const s of BASE_WATCHLIST.filter(s => s.ticker !== "BTC/USD")) {
+        const q = data[s.ticker];
+        if (q && !q.code && q.close) {
+          map[s.ticker] = {
             price: parseFloat(q.close),
             daily: parseFloat(q.percent_change),
             change: parseFloat(q.change),
             high52: q.fifty_two_week ? parseFloat(q.fifty_two_week.high) : null,
             low52: q.fifty_two_week ? parseFloat(q.fifty_two_week.low) : null,
-            marketCap: null,
-            pe: null,
             volume: parseFloat(q.volume),
             open: parseFloat(q.open),
             dayHigh: parseFloat(q.high),
@@ -280,19 +285,40 @@ export default function PHIOS() {
           };
         }
       }
+
+      // Fetch BTC separately using the crypto endpoint
+      try {
+        const btcRes = await fetch(
+          `https://api.twelvedata.com/price?symbol=BTC/USD&apikey=${TWELVE_KEY}`
+        );
+        const btcData = await btcRes.json();
+        if (btcData.price) {
+          const btcPrice = parseFloat(btcData.price);
+          map["BTC/USD"] = {
+            price: btcPrice,
+            daily: null,
+            change: null,
+            high52: null,
+            low52: null,
+          };
+        }
+      } catch {}
+
       setLiveData(map);
       setLastUpdated(new Date());
     } catch (e) {
       console.error("Twelve Data fetch error:", e);
     }
 
-    // Fetch sparklines for top 8 using time_series
+    // Fetch sparklines for top 8
     try {
-      const topTickers = BASE_WATCHLIST.slice(0, 8).map(s => s.ticker);
+      const topTickers = BASE_WATCHLIST.slice(0, 8).filter(s => s.ticker !== "BTC/USD").map(s => s.ticker);
       const sparks = {};
       await Promise.all(topTickers.map(async ticker => {
         try {
-          const r = await fetch(`https://api.twelvedata.com/time_series?symbol=${ticker}&interval=1day&outputsize=20&apikey=${TWELVE_KEY}`);
+          const r = await fetch(
+            `https://api.twelvedata.com/time_series?symbol=${ticker}&interval=1day&outputsize=20&apikey=${TWELVE_KEY}`
+          );
           const d = await r.json();
           if (d.values) {
             sparks[ticker] = d.values.reverse().map(v => parseFloat(v.close));
@@ -317,8 +343,6 @@ export default function PHIOS() {
     daily: liveData[s.ticker]?.daily ?? null,
     high52: liveData[s.ticker]?.high52 ?? null,
     low52: liveData[s.ticker]?.low52 ?? null,
-    marketCap: liveData[s.ticker]?.marketCap ?? null,
-    pe: liveData[s.ticker]?.pe ?? null,
     volume: liveData[s.ticker]?.volume ?? null,
   }));
 
@@ -344,8 +368,6 @@ export default function PHIOS() {
   const timeStr = currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const dateStr = currentTime.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 
-  const fmt = (n, dec = 2) => n != null ? n.toFixed(dec) : "—";
-  const fmtCurrency = n => n != null ? `$${n.toFixed(2)}` : "—";
   const fmtBig = n => {
     if (n == null) return "—";
     if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
@@ -373,11 +395,11 @@ export default function PHIOS() {
     liveIndicator: { display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: loading ? "#C9A84C" : "#4ade80" },
   };
 
+  // ── FIXED: generateMorningBrief now uses OpenRouter correctly ──
   const generateMorningBrief = async () => {
     setBriefLoading(true);
     setBriefError(null);
     try {
-      // Build context from live watchlist data
       const fibAlerts = watchlist.filter(s => {
         if (!s.price) return false;
         const fibs = calcFib(s.swingHigh, s.swingLow);
@@ -393,7 +415,7 @@ export default function PHIOS() {
         `${s.ticker}: Price $${s.price?.toFixed(2) ?? "N/A"}, Daily: ${s.daily?.toFixed(2) ?? "N/A"}%, IWS: ${s.iws}, Buy Readiness: ${s.buyReadiness}%`
       ).join("\n");
 
-      const prompt = `You are PHI — the AI intelligence inside PHI OS, a personal wealth operating system built for Indygo Tiffany, Chief Vision Officer. 
+      const prompt = `You are PHI — the AI intelligence inside PHI OS, a personal wealth operating system built for Indygo Tiffany, Chief Vision Officer.
 
 PHI OS is built on these principles:
 - Clarity over complexity. Discipline over emotion. Systems over speculation.
@@ -419,26 +441,35 @@ CAPITAL PROTECTION: (one risk reminder aligned with PHI principles)
 
 PHI PRINCIPLE: (one relevant PHI principle for today)
 
-Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff. Indygo should be able to close the laptop after reading this and know exactly what to do.`;
+Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.`;
 
-     const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      // FIXED: Using OpenRouter with correct endpoint and format
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_KEY}` },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${OPENROUTER_KEY}`,
+          "HTTP-Referer": "https://phi-os.vercel.app",
+          "X-Title": "PHI OS"
+        },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: "anthropic/claude-3-5-haiku",
           max_tokens: 1000,
           messages: [{ role: "user", content: prompt }]
         })
       });
 
       const data = await response.json();
-      if (data.content && data.content[0]) {
+
+      // OpenRouter returns OpenAI-style response format
+      if (data.choices && data.choices[0]?.message?.content) {
         setMorningBrief({
-          text: data.content[0].text,
+          text: data.choices[0].message.content,
           generatedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           date: new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })
         });
       } else {
+        console.error("OpenRouter response:", data);
         setBriefError("Unable to generate brief. Please try again.");
       }
     } catch (e) {
@@ -518,7 +549,6 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
           {/* ═══ DASHBOARD ═══ */}
           {nav === "dashboard" && (
             <div>
-              {/* STAT CARDS */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 14 }}>
                 {[
                   { label: "Portfolio Value", val: "$248,362", sub: "+1.35% Today", subColor: "#4ade80" },
@@ -536,7 +566,6 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 12, marginBottom: 12 }}>
-                {/* Performance */}
                 <div style={S.card}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                     <div style={S.cardTitle}>Portfolio Performance</div>
@@ -551,10 +580,9 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                   <PerfChart />
                   <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 16, height: 2, background: "#C9A84C" }} /><span style={{ fontSize: 9, color: "#475569" }}>PHI Portfolio</span></div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 16, height: 2, background: "#475569", borderStyle: "dashed" }} /><span style={{ fontSize: 9, color: "#475569" }}>S&P 500</span></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 16, height: 2, background: "#475569" }} /><span style={{ fontSize: 9, color: "#475569" }}>S&P 500</span></div>
                   </div>
                 </div>
-                {/* Allocation */}
                 <div style={S.card}>
                   <div style={S.cardTitle}>Portfolio Allocation</div>
                   <DonutChart portfolioValue={248362} />
@@ -562,7 +590,6 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 12, marginBottom: 12 }}>
-                {/* Live Watchlist Summary */}
                 <div style={S.card}>
                   <div style={S.cardTitle}>Live Watchlist · Top Holdings</div>
                   <table style={S.table}>
@@ -574,7 +601,9 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                         <tr key={s.ticker}>
                           <td style={{ ...S.td, color: "#C9A84C", fontWeight: 800 }}>{s.ticker}</td>
                           <td style={{ ...S.td, color: "#94a3b8", fontSize: 11 }}>{s.company.split(" ").slice(0, 2).join(" ")}</td>
-                          <td style={{ ...S.td, fontWeight: 600 }}>{s.price != null ? `$${s.price.toFixed(2)}` : <span style={{ color: "#334155" }}>Loading…</span>}</td>
+                          <td style={{ ...S.td, fontWeight: 600 }}>
+                            {s.price != null ? `$${s.price.toFixed(2)}` : <span style={{ color: "#334155" }}>Loading…</span>}
+                          </td>
                           <td style={{ ...S.td, color: s.daily != null ? (s.daily >= 0 ? "#4ade80" : "#f87171") : "#475569", fontWeight: 600 }}>
                             {s.daily != null ? `${s.daily >= 0 ? "+" : ""}${s.daily.toFixed(2)}%` : "—"}
                           </td>
@@ -586,7 +615,6 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                   </table>
                 </div>
 
-                {/* AI Morning Brief */}
                 <div style={S.card}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <div style={S.cardTitle}>⚡ AI Morning Brief</div>
@@ -595,7 +623,6 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                       {briefLoading ? "GENERATING..." : "GENERATE BRIEF"}
                     </button>
                   </div>
-
                   {!morningBrief && !briefLoading && !briefError && (
                     <div style={{ textAlign: "center", padding: "20px 0" }}>
                       <div style={{ fontSize: 28, color: "#C9A84C44", marginBottom: 8 }}>Φ</div>
@@ -603,18 +630,13 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                       <div style={{ fontSize: 11, color: "#334155" }}>PHI analyzes your watchlist and tells you exactly what to focus on today.</div>
                     </div>
                   )}
-
                   {briefLoading && (
                     <div style={{ textAlign: "center", padding: "20px 0" }}>
                       <div style={{ fontSize: 11, color: "#C9A84C", marginBottom: 8 }}>PHI is analyzing your watchlist...</div>
                       <div style={{ fontSize: 10, color: "#475569" }}>Checking Fibonacci zones · Reviewing IWS scores · Building your brief</div>
                     </div>
                   )}
-
-                  {briefError && (
-                    <div style={{ fontSize: 11, color: "#f87171", padding: "10px 0" }}>{briefError}</div>
-                  )}
-
+                  {briefError && <div style={{ fontSize: 11, color: "#f87171", padding: "10px 0" }}>{briefError}</div>}
                   {morningBrief && (
                     <div>
                       <div style={{ fontSize: 9, color: "#475569", marginBottom: 10 }}>Generated {morningBrief.date} at {morningBrief.generatedAt}</div>
@@ -632,19 +654,16 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                       })}
                       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                         {!isSpeaking && !isPaused && (
-                          <button onClick={speakBrief}
-                            style={{ background: "#C9A84C22", border: "1px solid #C9A84C44", borderRadius: 6, padding: "5px 12px", color: "#C9A84C", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                          <button onClick={speakBrief} style={{ background: "#C9A84C22", border: "1px solid #C9A84C44", borderRadius: 6, padding: "5px 12px", color: "#C9A84C", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
                             🔊 Listen
                           </button>
                         )}
                         {(isSpeaking || isPaused) && (
                           <>
-                            <button onClick={pauseSpeech}
-                              style={{ background: "#1e293b", border: "1px solid #C9A84C44", borderRadius: 6, padding: "5px 12px", color: "#C9A84C", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                            <button onClick={pauseSpeech} style={{ background: "#1e293b", border: "1px solid #C9A84C44", borderRadius: 6, padding: "5px 12px", color: "#C9A84C", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
                               {isPaused ? "▶ Resume" : "⏸ Pause"}
                             </button>
-                            <button onClick={stopSpeech}
-                              style={{ background: "#f8717111", border: "1px solid #f87171", borderRadius: 6, padding: "5px 12px", color: "#f87171", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                            <button onClick={stopSpeech} style={{ background: "#f8717111", border: "1px solid #f87171", borderRadius: 6, padding: "5px 12px", color: "#f87171", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
                               ⏹ Stop
                             </button>
                           </>
@@ -655,7 +674,6 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                 </div>
               </div>
 
-              {/* Fib Zone Alerts */}
               {fibZoneStocks.length > 0 && (
                 <div style={{ ...S.card, border: "1px solid #C9A84C44", background: "#0f1020" }}>
                   <div style={{ ...S.cardTitle, color: "#C9A84C" }}>⚡ Fibonacci Zone Alerts — {fibZoneStocks.length} Stock{fibZoneStocks.length > 1 ? "s" : ""} Within Entry Range</div>
@@ -694,7 +712,7 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
               <div style={S.card}>
                 <table style={S.table}>
                   <thead>
-                    <tr>{["Ticker","Company","Tier","Price","Daily %","52W High","52W Low","Mkt Cap","P/E","IWS","Readiness","Signal"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+                    <tr>{["Ticker","Company","Tier","Price","Daily %","52W High","52W Low","IWS","Readiness","Signal"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
                   </thead>
                   <tbody>
                     {filtered.map(s => (
@@ -708,8 +726,6 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                         </td>
                         <td style={{ ...S.td, color: "#64748b" }}>{s.high52 != null ? `$${s.high52.toFixed(2)}` : "—"}</td>
                         <td style={{ ...S.td, color: "#64748b" }}>{s.low52 != null ? `$${s.low52.toFixed(2)}` : "—"}</td>
-                        <td style={{ ...S.td, color: "#64748b", fontSize: 11 }}>{fmtBig(s.marketCap)}</td>
-                        <td style={{ ...S.td, color: "#64748b" }}>{s.pe != null ? s.pe.toFixed(1) : "—"}</td>
                         <td style={S.td}><IWSBar score={s.iws} /></td>
                         <td style={{ ...S.td, color: s.buyReadiness >= 80 ? "#4ade80" : "#C9A84C", fontWeight: 600 }}>{s.buyReadiness}%</td>
                         <td style={S.td}><span style={S.badge(getDecisionColor(s.decision))}>{s.decision}</span></td>
@@ -917,8 +933,7 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
           {nav === "aibrief" && (
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>⚡ PHI AI Morning Brief</div>
-              <div style={{ fontSize: 11, color: "#475569", marginBottom: 16 }}>PHI analyzes your entire watchlist, Fibonacci zones, and IWS scores — then tells you exactly what to focus on today. Read it in 3 minutes. Then close the laptop.</div>
-
+              <div style={{ fontSize: 11, color: "#475569", marginBottom: 16 }}>PHI analyzes your entire watchlist, Fibonacci zones, and IWS scores — then tells you exactly what to focus on today.</div>
               <div style={{ ...S.card, border: "1px solid #C9A84C33", marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
@@ -937,7 +952,6 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                   <div style={{ fontSize: 28, color: "#C9A84C", marginBottom: 12 }}>Φ</div>
                   <div style={{ fontSize: 13, color: "#C9A84C", fontWeight: 600, marginBottom: 8 }}>PHI is analyzing your watchlist...</div>
                   <div style={{ fontSize: 11, color: "#475569" }}>Checking Fibonacci zones · Reviewing IWS scores · Assessing market conditions</div>
-                  <div style={{ fontSize: 11, color: "#334155", marginTop: 4 }}>Building your personalized brief · This takes about 10 seconds</div>
                 </div>
               )}
 
@@ -956,19 +970,16 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       {!isSpeaking && !isPaused && (
-                        <button onClick={speakBrief}
-                          style={{ background: "#C9A84C", border: "none", borderRadius: 8, padding: "8px 16px", color: "#0a0e1a", fontSize: 11, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                        <button onClick={speakBrief} style={{ background: "#C9A84C", border: "none", borderRadius: 8, padding: "8px 16px", color: "#0a0e1a", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
                           🔊 LISTEN TO BRIEF
                         </button>
                       )}
                       {(isSpeaking || isPaused) && (
                         <>
-                          <button onClick={pauseSpeech}
-                            style={{ background: isPaused ? "#4ade80" : "#1e293b", border: "1px solid #C9A84C44", borderRadius: 8, padding: "8px 14px", color: isPaused ? "#0a0e1a" : "#C9A84C", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          <button onClick={pauseSpeech} style={{ background: isPaused ? "#4ade80" : "#1e293b", border: "1px solid #C9A84C44", borderRadius: 8, padding: "8px 14px", color: isPaused ? "#0a0e1a" : "#C9A84C", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                             {isPaused ? "▶ RESUME" : "⏸ PAUSE"}
                           </button>
-                          <button onClick={stopSpeech}
-                            style={{ background: "#f8717122", border: "1px solid #f87171", borderRadius: 8, padding: "8px 14px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          <button onClick={stopSpeech} style={{ background: "#f8717122", border: "1px solid #f87171", borderRadius: 8, padding: "8px 14px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                             ⏹ STOP
                           </button>
                         </>
@@ -979,7 +990,6 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                           PHI IS SPEAKING
                         </div>
                       )}
-                      <div style={{ fontSize: 20, color: "#C9A84C44" }}>Φ</div>
                     </div>
                   </div>
                   <div style={{ lineHeight: 1.8 }}>
@@ -990,9 +1000,7 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                       const isSection = firstLine.match(/^[A-Z\s]+:/);
                       return (
                         <div key={i} style={{ marginBottom: 16, padding: "12px 14px", background: "#0a0e1a", borderRadius: 8, borderLeft: `3px solid ${i === 0 ? "#C9A84C" : i === 1 ? "#4ade80" : i === 2 ? "#60a5fa" : i === 3 ? "#f87171" : "#C9A84C"}` }}>
-                          {isSection && (
-                            <div style={{ fontSize: 10, fontWeight: 800, color: "#C9A84C", letterSpacing: 1.5, marginBottom: 6 }}>{firstLine}</div>
-                          )}
+                          {isSection && <div style={{ fontSize: 10, fontWeight: 800, color: "#C9A84C", letterSpacing: 1.5, marginBottom: 6 }}>{firstLine}</div>}
                           <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
                             {isSection ? rest : section}
                           </div>
@@ -1012,7 +1020,7 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                   <div style={{ fontSize: 32, color: "#C9A84C44", marginBottom: 12 }}>Φ</div>
                   <div style={{ fontSize: 13, color: "#C9A84C", fontWeight: 600, marginBottom: 8 }}>Ready to brief you, Indygo</div>
                   <div style={{ fontSize: 11, color: "#475569", maxWidth: 400, margin: "0 auto", lineHeight: 1.6 }}>
-                    Click Generate Brief and PHI will analyze your entire watchlist, identify what's in your Fibonacci buy zones, and tell you exactly what to focus on today — in under 3 minutes.
+                    Click Generate Brief and PHI will analyze your entire watchlist, identify what's in your Fibonacci buy zones, and tell you exactly what to focus on today.
                   </div>
                 </div>
               )}
@@ -1088,13 +1096,13 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80" }} />
                     <span style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Twelve Data API — Connected</span>
-                    <span style={{ fontSize: 11, color: "#475569", marginLeft: "auto" }}>Live prices · 19 stocks · Refreshes every 5 min</span>
+                    <span style={{ fontSize: 11, color: "#475569", marginLeft: "auto" }}>Live prices · 20 stocks · Refreshes every 5 min</span>
                   </div>
                 </div>
                 <div style={{ ...S.card, gridColumn: "span 2" }}>
                   <div style={S.cardTitle}>System Info</div>
                   <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
-                    {[["Founder","Indygo Tiffany"],["Title","Chief Vision Officer"],["System","PHI OS"],["Version","4.0 Master Build"],["Data","FMP API — Live"]].map(([l, v]) => (
+                    {[["Founder","Indygo Tiffany"],["Title","Chief Vision Officer"],["System","PHI OS"],["Version","4.0 Master Build"],["AI","OpenRouter · Claude 3.5 Haiku"]].map(([l, v]) => (
                       <div key={l}>
                         <div style={{ fontSize: 9, color: "#475569", letterSpacing: 1, marginBottom: 3 }}>{l.toUpperCase()}</div>
                         <div style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{v}</div>
@@ -1111,7 +1119,3 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
     </div>
   );
 }
-
-
-
-
