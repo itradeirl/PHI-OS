@@ -232,37 +232,54 @@ export default function PHIOS() {
     return () => clearInterval(t);
   }, []);
 
+  // REPLACE the entire fetchLiveData function with this:
+
   const fetchLiveData = useCallback(async () => {
     setLoading(true);
     setDataError(null);
+    const FINNHUB_KEY = "d91e6dhr01qqfqkbglt0d91e6dhr01qqfqkbgltg";
+    
     try {
-      // Use Yahoo Finance via a CORS proxy — no API key needed, no rate limits
-      const stockTickers = BASE_WATCHLIST.map(s => s.ticker).join(",");
-      const proxyUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${stockTickers}&fields=regularMarketPrice,regularMarketChangePercent,regularMarketChange,fiftyTwoWeekHigh,fiftyTwoWeekLow,regularMarketVolume`;
-      
-      // Use allorigins as CORS proxy
-      const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(proxyUrl)}`);
-const data = await res.json();
-      
+      const results = await Promise.allSettled(
+        BASE_WATCHLIST.map(async (s) => {
+          // Finnhub uses different symbol for BTC
+          const symbol = s.ticker === "BTC/USD" ? "BINANCE:BTCUSDT" : s.ticker;
+          const res = await fetch(
+            `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`
+          );
+          const q = await res.json();
+          return { ticker: s.ticker, q };
+        })
+      );
+
       const map = {};
-      if (data?.quoteResponse?.result) {
-        for (const q of data.quoteResponse.result) {
-          const ticker = q.symbol;
-          map[ticker] = {
-            price: q.regularMarketPrice ?? null,
-            daily: q.regularMarketChangePercent ?? null,
-            change: q.regularMarketChange ?? null,
-            high52: q.fiftyTwoWeekHigh ?? null,
-            low52: q.fiftyTwoWeekLow ?? null,
-            volume: q.regularMarketVolume ?? null,
-          };
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          const { ticker, q } = result.value;
+          if (q && q.c && q.c !== 0) {
+            const prevClose = q.pc || q.c;
+            const dailyPct = prevClose ? ((q.c - prevClose) / prevClose) * 100 : 0;
+            map[ticker] = {
+              price: q.c,
+              daily: dailyPct,
+              change: q.c - prevClose,
+              high52: null,
+              low52: null,
+              volume: null,
+            };
+          }
         }
       }
-      setLiveData(map);
-      setLastUpdated(new Date());
+
+      if (Object.keys(map).length > 0) {
+        setLiveData(map);
+        setLastUpdated(new Date());
+      } else {
+        setDataError("Market may be closed or data temporarily unavailable.");
+      }
     } catch (e) {
-      console.error("Data fetch error:", e);
-      setDataError("Price data unavailable — market may be closed or connection issue.");
+      console.error("Finnhub fetch error:", e);
+      setDataError("Connection error loading price data.");
     }
     setLoading(false);
   }, []);
