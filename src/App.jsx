@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 const TWELVE_KEY = "bf279a0df6144d37aa525b6629486e1a";
-const OPENAI_KEY = "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";
+const OPENROUTER_KEY = "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";
 const PHI_PRINCIPLES = [
   "Buy businesses, not tickers.",
   "Patience is an investment strategy.",
