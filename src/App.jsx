@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 const TWELVE_KEY = "bf279a0df6144d37aa525b6629486e1a";
-
+const OPENAI_KEY = "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";
 const PHI_PRINCIPLES = [
   "Buy businesses, not tickers.",
   "Patience is an investment strategy.",
@@ -35,8 +35,8 @@ const BASE_WATCHLIST = [
   { ticker: "OKLO", company: "Oklo Inc.", tier: "Speculative", theme: "Advanced Nuclear", sector: "Energy", iws: 80, buyReadiness: 62, decision: "WATCH", swingHigh: 58.92, swingLow: 6.14, position: 0.02 },
   { ticker: "SMR", company: "NuScale Power", tier: "Speculative", theme: "SMR Nuclear", sector: "Energy", iws: 76, buyReadiness: 45, decision: "WAIT", swingHigh: 32.41, swingLow: 7.80, position: 0.02 },
   { ticker: "SYM", company: "Symbotic Inc.", tier: "Speculative", theme: "Automation/Robotics", sector: "Robotics", iws: 82, buyReadiness: 65, decision: "WATCH", swingHigh: 54.50, swingLow: 14.89, position: 0.02 },
-  { ticker: "BTCUSD", company: "Bitcoin", tier: "Speculative", theme: "Crypto", sector: "Digital Assets", iws: 75, buyReadiness: 60, decision: "WATCH", swingHigh: 109000, swingLow: 49000, position: 0.02 },
-  ];
+  { ticker: "BTC/USD", company: "Bitcoin", tier: "Speculative", theme: "Crypto", sector: "Digital Assets", iws: 75, buyReadiness: 60, decision: "WATCH", swingHigh: 109000, swingLow: 49000, position: 0.02 },
+];
 
 const IWS_SCORES = [
   { ticker: "NVDA", moat: 20, leadership: 10, financial: 15, growth: 15, industry: 10, institutional: 10, valuation: 8, technical: 10 },
@@ -102,6 +102,7 @@ const NAV = [
   { id: "iws", label: "IWS SCORING", icon: "◎" },
   { id: "portfolio", label: "PORTFOLIO", icon: "◫" },
   { id: "journal", label: "PHI LOG", icon: "◧" },
+  { id: "aibrief", label: "AI INSIGHTS", icon: "⚡" },
   { id: "constitution", label: "CONSTITUTION", icon: "◆" },
   { id: "settings", label: "SETTINGS", icon: "⚙" },
 ];
@@ -206,6 +207,45 @@ export default function PHIOS() {
   const [principleIdx] = useState(Math.floor(Math.random() * PHI_PRINCIPLES.length));
   const [journalEntries, setJournalEntries] = useState([]);
   const [journalForm, setJournalForm] = useState({ ticker: "", decision: "BUY", price: "", fibLevel: "", iws: "", thesis: "" });
+  const [morningBrief, setMorningBrief] = useState(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefError, setBriefError] = useState(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+
+  const speakBrief = () => {
+    if (!morningBrief) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(
+      `Good morning, Indygo. Here is your PHI Morning Brief for ${morningBrief.date}. ${morningBrief.text.replace(/\n/g, " ")}`
+    );
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v => v.name.includes("Google US English") || v.name.includes("Samantha") || v.name.includes("Alex") || v.lang === "en-US");
+    if (preferred) utterance.voice = preferred;
+    utterance.onstart = () => { setIsSpeaking(true); setIsPaused(false); };
+    utterance.onend = () => { setIsSpeaking(false); setIsPaused(false); };
+    utterance.onerror = () => { setIsSpeaking(false); setIsPaused(false); };
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const pauseSpeech = () => {
+    if (isSpeaking && !isPaused) {
+      window.speechSynthesis.pause();
+      setIsPaused(true);
+    } else if (isPaused) {
+      window.speechSynthesis.resume();
+      setIsPaused(false);
+    }
+  };
+
+  const stopSpeech = () => {
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+    setIsPaused(false);
+  };
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 30000);
@@ -223,12 +263,12 @@ export default function PHIOS() {
       // Twelve Data returns object keyed by ticker when multiple symbols
       for (const ticker of BASE_WATCHLIST.map(s => s.ticker)) {
         const q = data[ticker];
-       if (q && !q.code && !q.status) {
+        if (q && !q.code && !q.status) {
           map[ticker] = {
             price: parseFloat(q.close),
             daily: parseFloat(q.percent_change),
             change: parseFloat(q.change),
-           high52: q.fifty_two_week ? parseFloat(q.fifty_two_week.high) : null,
+            high52: q.fifty_two_week ? parseFloat(q.fifty_two_week.high) : null,
             low52: q.fifty_two_week ? parseFloat(q.fifty_two_week.low) : null,
             marketCap: null,
             pe: null,
@@ -331,6 +371,81 @@ export default function PHIOS() {
     filterBtn: (a) => ({ fontSize: 10, fontWeight: a ? 700 : 500, padding: "4px 11px", borderRadius: 5, border: "1px solid", borderColor: a ? "#C9A84C" : "#1e293b", background: a ? "#C9A84C22" : "transparent", color: a ? "#C9A84C" : "#64748b", cursor: "pointer" }),
     input: { background: "#0a0e1a", border: "1px solid #1e293b", borderRadius: 6, padding: "5px 8px", color: "#e2e8f0", fontSize: 12, outline: "none" },
     liveIndicator: { display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: loading ? "#C9A84C" : "#4ade80" },
+  };
+
+  const generateMorningBrief = async () => {
+    setBriefLoading(true);
+    setBriefError(null);
+    try {
+      // Build context from live watchlist data
+      const fibAlerts = watchlist.filter(s => {
+        if (!s.price) return false;
+        const fibs = calcFib(s.swingHigh, s.swingLow);
+        const { dist } = getNearestFib(s.price, fibs);
+        return Math.abs(dist) <= 5;
+      }).map(s => {
+        const fibs = calcFib(s.swingHigh, s.swingLow);
+        const { dist, label } = getNearestFib(s.price, fibs);
+        return `${s.ticker} (${s.company}) — IWS: ${s.iws}, Price: $${s.price?.toFixed(2)}, ${dist.toFixed(2)}% from ${label} Fibonacci level`;
+      });
+
+      const topStocks = watchlist.slice(0, 8).map(s =>
+        `${s.ticker}: Price $${s.price?.toFixed(2) ?? "N/A"}, Daily: ${s.daily?.toFixed(2) ?? "N/A"}%, IWS: ${s.iws}, Buy Readiness: ${s.buyReadiness}%`
+      ).join("\n");
+
+      const prompt = `You are PHI — the AI intelligence inside PHI OS, a personal wealth operating system built for Indygo Tiffany, Chief Vision Officer. 
+
+PHI OS is built on these principles:
+- Clarity over complexity. Discipline over emotion. Systems over speculation.
+- Protect capital first. Opportunities always come back.
+- Buy businesses, not tickers. Patience is an investment strategy.
+
+Indygo's 2036 goals: $500K portfolio, $20K/month passive income, 10 automated businesses, live outside America.
+
+Current watchlist data:
+${topStocks}
+
+${fibAlerts.length > 0 ? `FIBONACCI ZONE ALERTS — These stocks are within 5% of a key buy zone:\n${fibAlerts.join("\n")}` : "No stocks currently in Fibonacci buy zones."}
+
+Generate a PHI Morning Brief for Indygo. Format it as:
+
+MARKET OUTLOOK: (2-3 sentences on overall market conditions and what to watch)
+
+TODAY'S FOCUS: (specific stocks to review today and why, based on Fib zones and IWS scores)
+
+ACTION ITEMS: (clear, specific actions — buy, watch, hold, or no action needed)
+
+CAPITAL PROTECTION: (one risk reminder aligned with PHI principles)
+
+PHI PRINCIPLE: (one relevant PHI principle for today)
+
+Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff. Indygo should be able to close the laptop after reading this and know exactly what to do.`;
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+
+      const data = await response.json();
+      if (data.content && data.content[0]) {
+        setMorningBrief({
+          text: data.content[0].text,
+          generatedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          date: new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })
+        });
+      } else {
+        setBriefError("Unable to generate brief. Please try again.");
+      }
+    } catch (e) {
+      setBriefError("Connection error. Please check your internet and try again.");
+      console.error("Morning brief error:", e);
+    }
+    setBriefLoading(false);
   };
 
   const addJournalEntry = () => {
@@ -473,24 +588,70 @@ export default function PHIOS() {
 
                 {/* AI Morning Brief */}
                 <div style={S.card}>
-                  <div style={S.cardTitle}>AI Morning Brief</div>
-                  {[
-                    { icon: "◎", label: "Market Outlook", text: "Tech and AI infrastructure leading. Monitor Fibonacci zones for accumulation entries." },
-                    { icon: "◈", label: "Key Levels", text: "SPY Resistance: 535 · Support: 510. QQQ Resistance: 460 · Support: 430." },
-                    { icon: "◉", label: "Focus List", text: `${fibZoneStocks.length > 0 ? fibZoneStocks.map(s => s.ticker).join(", ") : "No stocks"} near Fib zones today.` },
-                    { icon: "⚠", label: "Risk Alert", text: "Keep position sizes disciplined. Protect capital first. Opportunities always come back." },
-                  ].map((item, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                      <span style={{ fontSize: 13, color: "#C9A84C", marginTop: 1 }}>{item.icon}</span>
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: "#C9A84C", marginBottom: 2 }}>{item.label}</div>
-                        <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>{item.text}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <div style={S.cardTitle}>⚡ AI Morning Brief</div>
+                    <button onClick={generateMorningBrief} disabled={briefLoading}
+                      style={{ background: briefLoading ? "#1e293b" : "#C9A84C", border: "none", borderRadius: 6, padding: "5px 12px", color: briefLoading ? "#475569" : "#0a0e1a", fontSize: 10, fontWeight: 700, cursor: briefLoading ? "default" : "pointer", letterSpacing: 0.5 }}>
+                      {briefLoading ? "GENERATING..." : "GENERATE BRIEF"}
+                    </button>
+                  </div>
+
+                  {!morningBrief && !briefLoading && !briefError && (
+                    <div style={{ textAlign: "center", padding: "20px 0" }}>
+                      <div style={{ fontSize: 28, color: "#C9A84C44", marginBottom: 8 }}>Φ</div>
+                      <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>Your AI Morning Brief is ready to generate.</div>
+                      <div style={{ fontSize: 11, color: "#334155" }}>PHI analyzes your watchlist and tells you exactly what to focus on today.</div>
+                    </div>
+                  )}
+
+                  {briefLoading && (
+                    <div style={{ textAlign: "center", padding: "20px 0" }}>
+                      <div style={{ fontSize: 11, color: "#C9A84C", marginBottom: 8 }}>PHI is analyzing your watchlist...</div>
+                      <div style={{ fontSize: 10, color: "#475569" }}>Checking Fibonacci zones · Reviewing IWS scores · Building your brief</div>
+                    </div>
+                  )}
+
+                  {briefError && (
+                    <div style={{ fontSize: 11, color: "#f87171", padding: "10px 0" }}>{briefError}</div>
+                  )}
+
+                  {morningBrief && (
+                    <div>
+                      <div style={{ fontSize: 9, color: "#475569", marginBottom: 10 }}>Generated {morningBrief.date} at {morningBrief.generatedAt}</div>
+                      {morningBrief.text.split("\n\n").map((section, i) => {
+                        const lines = section.split("\n");
+                        const header = lines[0];
+                        const body = lines.slice(1).join("\n");
+                        const isHeader = header.includes(":");
+                        return (
+                          <div key={i} style={{ marginBottom: 10, padding: "8px 10px", background: "#0a0e1a", borderRadius: 6, borderLeft: "2px solid #C9A84C33" }}>
+                            {isHeader && <div style={{ fontSize: 10, fontWeight: 700, color: "#C9A84C", marginBottom: 4, letterSpacing: 0.5 }}>{header}</div>}
+                            <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>{body || (!isHeader ? section : "")}</div>
+                          </div>
+                        );
+                      })}
+                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                        {!isSpeaking && !isPaused && (
+                          <button onClick={speakBrief}
+                            style={{ background: "#C9A84C22", border: "1px solid #C9A84C44", borderRadius: 6, padding: "5px 12px", color: "#C9A84C", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                            🔊 Listen
+                          </button>
+                        )}
+                        {(isSpeaking || isPaused) && (
+                          <>
+                            <button onClick={pauseSpeech}
+                              style={{ background: "#1e293b", border: "1px solid #C9A84C44", borderRadius: 6, padding: "5px 12px", color: "#C9A84C", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                              {isPaused ? "▶ Resume" : "⏸ Pause"}
+                            </button>
+                            <button onClick={stopSpeech}
+                              style={{ background: "#f8717111", border: "1px solid #f87171", borderRadius: 6, padding: "5px 12px", color: "#f87171", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                              ⏹ Stop
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
-                  ))}
-                  <div style={{ marginTop: 8, padding: "8px 10px", background: "#0a0e1a", borderRadius: 6, border: "1px solid #C9A84C22" }}>
-                    <div style={{ fontSize: 11, color: "#C9A84C", fontStyle: "italic", lineHeight: 1.6 }}>"{PHI_PRINCIPLES[principleIdx]}"</div>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -752,6 +913,112 @@ export default function PHIOS() {
             </div>
           )}
 
+          {/* ═══ AI INSIGHTS ═══ */}
+          {nav === "aibrief" && (
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>⚡ PHI AI Morning Brief</div>
+              <div style={{ fontSize: 11, color: "#475569", marginBottom: 16 }}>PHI analyzes your entire watchlist, Fibonacci zones, and IWS scores — then tells you exactly what to focus on today. Read it in 3 minutes. Then close the laptop.</div>
+
+              <div style={{ ...S.card, border: "1px solid #C9A84C33", marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#C9A84C" }}>Generate Today's Brief</div>
+                    <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>Powered by Claude AI · Personalized to your PHI OS watchlist</div>
+                  </div>
+                  <button onClick={generateMorningBrief} disabled={briefLoading}
+                    style={{ background: briefLoading ? "#1e293b" : "#C9A84C", border: "none", borderRadius: 8, padding: "10px 24px", color: briefLoading ? "#475569" : "#0a0e1a", fontSize: 12, fontWeight: 800, cursor: briefLoading ? "default" : "pointer", letterSpacing: 0.5 }}>
+                    {briefLoading ? "PHI IS THINKING..." : "⚡ GENERATE BRIEF"}
+                  </button>
+                </div>
+              </div>
+
+              {briefLoading && (
+                <div style={{ ...S.card, textAlign: "center", padding: "40px 0" }}>
+                  <div style={{ fontSize: 28, color: "#C9A84C", marginBottom: 12 }}>Φ</div>
+                  <div style={{ fontSize: 13, color: "#C9A84C", fontWeight: 600, marginBottom: 8 }}>PHI is analyzing your watchlist...</div>
+                  <div style={{ fontSize: 11, color: "#475569" }}>Checking Fibonacci zones · Reviewing IWS scores · Assessing market conditions</div>
+                  <div style={{ fontSize: 11, color: "#334155", marginTop: 4 }}>Building your personalized brief · This takes about 10 seconds</div>
+                </div>
+              )}
+
+              {briefError && (
+                <div style={{ ...S.card, border: "1px solid #f8717144" }}>
+                  <div style={{ fontSize: 12, color: "#f87171" }}>⚠ {briefError}</div>
+                </div>
+              )}
+
+              {morningBrief && !briefLoading && (
+                <div style={S.card}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #1e293b" }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#C9A84C" }}>PHI Morning Brief</div>
+                      <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>{morningBrief.date} · Generated at {morningBrief.generatedAt}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {!isSpeaking && !isPaused && (
+                        <button onClick={speakBrief}
+                          style={{ background: "#C9A84C", border: "none", borderRadius: 8, padding: "8px 16px", color: "#0a0e1a", fontSize: 11, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                          🔊 LISTEN TO BRIEF
+                        </button>
+                      )}
+                      {(isSpeaking || isPaused) && (
+                        <>
+                          <button onClick={pauseSpeech}
+                            style={{ background: isPaused ? "#4ade80" : "#1e293b", border: "1px solid #C9A84C44", borderRadius: 8, padding: "8px 14px", color: isPaused ? "#0a0e1a" : "#C9A84C", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            {isPaused ? "▶ RESUME" : "⏸ PAUSE"}
+                          </button>
+                          <button onClick={stopSpeech}
+                            style={{ background: "#f8717122", border: "1px solid #f87171", borderRadius: 8, padding: "8px 14px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            ⏹ STOP
+                          </button>
+                        </>
+                      )}
+                      {isSpeaking && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#4ade80" }}>
+                          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80" }} />
+                          PHI IS SPEAKING
+                        </div>
+                      )}
+                      <div style={{ fontSize: 20, color: "#C9A84C44" }}>Φ</div>
+                    </div>
+                  </div>
+                  <div style={{ lineHeight: 1.8 }}>
+                    {morningBrief.text.split("\n\n").map((section, i) => {
+                      const lines = section.split("\n");
+                      const firstLine = lines[0];
+                      const rest = lines.slice(1).join("\n");
+                      const isSection = firstLine.match(/^[A-Z\s]+:/);
+                      return (
+                        <div key={i} style={{ marginBottom: 16, padding: "12px 14px", background: "#0a0e1a", borderRadius: 8, borderLeft: `3px solid ${i === 0 ? "#C9A84C" : i === 1 ? "#4ade80" : i === 2 ? "#60a5fa" : i === 3 ? "#f87171" : "#C9A84C"}` }}>
+                          {isSection && (
+                            <div style={{ fontSize: 10, fontWeight: 800, color: "#C9A84C", letterSpacing: 1.5, marginBottom: 6 }}>{firstLine}</div>
+                          )}
+                          <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+                            {isSection ? rest : section}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: 12, padding: "10px 14px", background: "#C9A84C11", borderRadius: 8, border: "1px solid #C9A84C33", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>CLARITY OVER COMPLEXITY · DISCIPLINE OVER EMOTION · SYSTEMS OVER SPECULATION</div>
+                    <div style={{ fontSize: 20, color: "#C9A84C44" }}>Φ</div>
+                  </div>
+                </div>
+              )}
+
+              {!morningBrief && !briefLoading && !briefError && (
+                <div style={{ ...S.card, textAlign: "center", padding: "40px 0" }}>
+                  <div style={{ fontSize: 32, color: "#C9A84C44", marginBottom: 12 }}>Φ</div>
+                  <div style={{ fontSize: 13, color: "#C9A84C", fontWeight: 600, marginBottom: 8 }}>Ready to brief you, Indygo</div>
+                  <div style={{ fontSize: 11, color: "#475569", maxWidth: 400, margin: "0 auto", lineHeight: 1.6 }}>
+                    Click Generate Brief and PHI will analyze your entire watchlist, identify what's in your Fibonacci buy zones, and tell you exactly what to focus on today — in under 3 minutes.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ═══ CONSTITUTION ═══ */}
           {nav === "constitution" && (
             <div>
@@ -844,3 +1111,7 @@ export default function PHIOS() {
     </div>
   );
 }
+
+
+
+
