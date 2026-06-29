@@ -453,7 +453,7 @@ Keep it concise, confident, and actionable. Maximum 5 minutes to read. No fluff.
           "X-Title": "PHI OS"
         },
         body: JSON.stringify({
-          model: "anthropic/claude-3-5-haiku-20241022",
+          model: "anthropic/claude-3-haiku",
           max_tokens: 1000,
           messages: [{ role: "user", content: prompt }]
         })
