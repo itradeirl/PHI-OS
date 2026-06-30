@@ -263,8 +263,8 @@ export default function PHIOS() {
               price: q.c,
               daily: dailyPct,
               change: q.c - prevClose,
-              high52: null,
-              low52: null,
+              high52: q.h || null,
+              low52: q.l || null,
               volume: null,
             };
           }
