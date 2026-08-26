@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const PHI_PRINCIPLES = [
   "Buy businesses, not tickers.",
@@ -194,33 +194,70 @@ export default function PHIOS() {
   const [briefError, setBriefError] = useState(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
   const [dataError, setDataError] = useState(null);
+  const audioRef = useRef(null);
 
-  const speakBrief = () => {
+  // Reads the brief aloud using ElevenLabs (real AI voice, "Marcos") via the
+  // /api/speak proxy, instead of the browser's built-in synthetic voices.
+  const speakBrief = async () => {
     if (!morningBrief) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(
-      `Good morning, Indygo. Here is your PHI Morning Brief for ${morningBrief.date}. ${morningBrief.text.replace(/\n/g, " ")}`
-    );
-    utterance.rate = 0.9;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(v => v.name.includes("Google US English") || v.name.includes("Samantha") || v.name.includes("Alex") || v.lang === "en-US");
-    if (preferred) utterance.voice = preferred;
-    utterance.onstart = () => { setIsSpeaking(true); setIsPaused(false); };
-    utterance.onend = () => { setIsSpeaking(false); setIsPaused(false); };
-    utterance.onerror = () => { setIsSpeaking(false); setIsPaused(false); };
-    window.speechSynthesis.speak(utterance);
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setIsSpeaking(false);
+    setIsPaused(false);
+    setAudioLoading(true);
+
+    try {
+      const text = `Good morning, Indygo. Here is your PHI Morning Brief for ${morningBrief.date}. ${morningBrief.text.replace(/\n/g, " ")}`;
+      const response = await fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!response.ok) throw new Error("Speech generation failed");
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        setIsSpeaking(false);
+        setIsPaused(false);
+        audioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setIsSpeaking(false);
+        setIsPaused(false);
+      };
+
+      setAudioLoading(false);
+      setIsSpeaking(true);
+      await audio.play();
+    } catch (e) {
+      console.error("Speech generation error:", e);
+      setAudioLoading(false);
+      setIsSpeaking(false);
+    }
   };
 
   const pauseSpeech = () => {
-    if (isSpeaking && !isPaused) { window.speechSynthesis.pause(); setIsPaused(true); }
-    else if (isPaused) { window.speechSynthesis.resume(); setIsPaused(false); }
+    if (!audioRef.current) return;
+    if (isSpeaking && !isPaused) { audioRef.current.pause(); setIsPaused(true); }
+    else if (isPaused) { audioRef.current.play(); setIsPaused(false); }
   };
 
   const stopSpeech = () => {
-    window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
     setIsSpeaking(false);
     setIsPaused(false);
   };
@@ -537,7 +574,7 @@ export default function PHIOS() {
                       })}
                       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                         {!isSpeaking && !isPaused && (
-                          <button onClick={speakBrief} style={{ background: "#C9A84C22", border: "1px solid #C9A84C44", borderRadius: 6, padding: "5px 12px", color: "#C9A84C", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>🔊 Listen</button>
+                          <button onClick={speakBrief} disabled={audioLoading} style={{ background: "#C9A84C22", border: "1px solid #C9A84C44", borderRadius: 6, padding: "5px 12px", color: "#C9A84C", fontSize: 10, fontWeight: 700, cursor: audioLoading ? "default" : "pointer" }}>{audioLoading ? "Generating…" : "🔊 Listen"}</button>
                         )}
                         {(isSpeaking || isPaused) && (
                           <>
@@ -820,7 +857,7 @@ export default function PHIOS() {
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                       {!isSpeaking && !isPaused && (
-                        <button onClick={speakBrief} style={{ background: "#C9A84C", border: "none", borderRadius: 8, padding: "8px 16px", color: "#0a0e1a", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🔊 LISTEN</button>
+                        <button onClick={speakBrief} disabled={audioLoading} style={{ background: "#C9A84C", border: "none", borderRadius: 8, padding: "8px 16px", color: "#0a0e1a", fontSize: 11, fontWeight: 800, cursor: audioLoading ? "default" : "pointer" }}>{audioLoading ? "GENERATING…" : "🔊 LISTEN"}</button>
                       )}
                       {(isSpeaking || isPaused) && (
                         <>
