@@ -9,6 +9,12 @@ import { list, get } from "@vercel/blob";
 // replaced.
 
 export default async function handler(req, res) {
+  // This response must never be cached — by Vercel's edge/CDN, or by the
+  // browser. A stale cached copy here is exactly what caused the dashboard
+  // to keep showing yesterday's brief even after a real new one existed.
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+
   try {
     const { blobs } = await list({ prefix: "briefs/" });
 
@@ -26,6 +32,7 @@ export default async function handler(req, res) {
     const result = await get(latest.pathname, {
       access: "private",
       token: process.env.BLOB_READ_WRITE_TOKEN,
+      useCache: false, // force a fresh read from origin, not Blob's own CDN cache
     });
 
     if (!result || result.statusCode !== 200) {

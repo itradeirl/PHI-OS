@@ -275,7 +275,7 @@ export default function PHIOS() {
 
     try {
       const tickers = BASE_WATCHLIST.map(s => s.ticker).join(",");
-      const res = await fetch(`/api/quote?tickers=${encodeURIComponent(tickers)}`);
+      const res = await fetch(`/api/quote?tickers=${encodeURIComponent(tickers)}`, { cache: "no-store" });
       const quotes = await res.json();
 
       if (!res.ok) {
@@ -392,7 +392,7 @@ export default function PHIOS() {
       // ATLAS/SPIRA/BASTION/SAGE/OMEGA agent pipeline (phi-os-chief-of-staff/
       // chief-of-staff.js) instead of calling an AI model directly from the
       // browser. See api/brief.js.
-      const response = await fetch("/api/brief");
+      const response = await fetch("/api/brief", { cache: "no-store" });
       const data = await response.json();
 
       if (!response.ok) {
