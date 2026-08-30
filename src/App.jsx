@@ -93,6 +93,17 @@ function getRating(score) {
   return score >= 95 ? "Elite" : score >= 85 ? "Strong" : score >= 80 ? "Watch" : "Speculative";
 }
 
+// chief-of-staff.js saves each brief as "briefs/YYYY-MM-DD-PHI-<Routine-Name>.txt"
+// (e.g. "2026-08-29-PHI-Close-Report.txt") — pull the routine name back out of
+// that so the UI label always matches whichever brief actually loaded, instead
+// of a hardcoded "Morning Brief" regardless of what's really being shown.
+function parseRoutineLabel(filename) {
+  if (!filename) return "PHI Morning Brief";
+  const base = filename.split("/").pop().replace(/\.txt$/, "");
+  const withoutDate = base.replace(/^\d{4}-\d{2}-\d{2}-/, "");
+  return withoutDate.replace(/-/g, " ");
+}
+
 const NAV = [
   { id: "dashboard", label: "DASHBOARD", icon: "⊞" },
   { id: "watchlist", label: "WATCHLIST", icon: "◉" },
@@ -212,7 +223,7 @@ export default function PHIOS() {
     setAudioLoading(true);
 
     try {
-      const text = `Good morning, Indygo. Here is your PHI Morning Brief for ${morningBrief.date}. ${morningBrief.text.replace(/\n/g, " ")}`;
+      const text = `${greeting}, Indygo. Here is your ${morningBrief.routineLabel} for ${morningBrief.date}. ${morningBrief.text.replace(/\n/g, " ")}`;
       const response = await fetch("/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -405,7 +416,8 @@ export default function PHIOS() {
       setMorningBrief({
         text: data.text,
         generatedAt: generatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        date: generatedAt.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })
+        date: generatedAt.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }),
+        routineLabel: parseRoutineLabel(data.filename),
       });
     } catch (e) {
       console.error("Brief error:", e);
@@ -539,7 +551,7 @@ export default function PHIOS() {
 
                 <div style={S.card}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                    <div style={S.cardTitle}>⚡ AI Morning Brief</div>
+                    <div style={S.cardTitle}>⚡ {morningBrief ? morningBrief.routineLabel : "AI Brief"}</div>
                     <button onClick={generateMorningBrief} disabled={briefLoading}
                       style={{ background: briefLoading ? "#1e293b" : "#C9A84C", border: "none", borderRadius: 6, padding: "5px 12px", color: briefLoading ? "#475569" : "#0a0e1a", fontSize: 10, fontWeight: 700, cursor: briefLoading ? "default" : "pointer" }}>
                       {briefLoading ? "GENERATING..." : "GENERATE BRIEF"}
@@ -827,7 +839,7 @@ export default function PHIOS() {
           {/* AI INSIGHTS */}
           {nav === "aibrief" && (
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>⚡ PHI AI Morning Brief</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>⚡ {morningBrief ? `PHI AI ${morningBrief.routineLabel.replace(/^PHI /, "")}` : "PHI AI Brief"}</div>
               <div style={{ fontSize: 11, color: "#475569", marginBottom: 16 }}>PHI analyzes your watchlist and tells you exactly what to focus on today.</div>
               <div style={{ ...S.card, border: "1px solid #C9A84C33", marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -852,7 +864,7 @@ export default function PHIOS() {
                 <div style={S.card}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #1e293b" }}>
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: "#C9A84C" }}>PHI Morning Brief</div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: "#C9A84C" }}>{morningBrief.routineLabel}</div>
                       <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>{morningBrief.date} · {morningBrief.generatedAt}</div>
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
