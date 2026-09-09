@@ -208,6 +208,7 @@ export default function PHIOS() {
   const [audioLoading, setAudioLoading] = useState(false);
   const [dataError, setDataError] = useState(null);
   const audioRef = useRef(null);
+  const briefPollCountRef = useRef(0);
 
   // Reads the brief aloud using ElevenLabs (real AI voice, "Marcos") via the
   // /api/speak proxy, instead of the browser's built-in synthetic voices.
@@ -331,6 +332,20 @@ export default function PHIOS() {
     return () => clearInterval(interval);
   }, [fetchLiveData]);
 
+  useEffect(() => {
+    fetch("/api/journal")
+      .then(r => r.json())
+      .then(data => setJournalEntries(data.entries || []))
+      .catch(e => console.error("Journal fetch error:", e));
+  }, []);
+
+  // Load (or, if none exists yet for right now, generate) today's brief as
+  // soon as the dashboard opens, instead of requiring a manual click.
+  useEffect(() => {
+    generateMorningBrief();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Map ticker display names to Yahoo Finance symbols
   const getYahooTicker = (ticker) => ticker === "BTC/USD" ? "BTC-USD" : ticker;
 
@@ -406,6 +421,21 @@ export default function PHIOS() {
       const response = await fetch("/api/brief", { cache: "no-store" });
       const data = await response.json();
 
+      if (data.status === "generating") {
+        briefPollCountRef.current += 1;
+        if (briefPollCountRef.current > 24) {
+          // ~2 minutes of polling (24 x 5s) — a genuinely stuck run shouldn't
+          // poll forever silently.
+          briefPollCountRef.current = 0;
+          setBriefError("Still generating — check back shortly.");
+          setBriefLoading(false);
+          return;
+        }
+        setTimeout(generateMorningBrief, 5000);
+        return; // stay in the loading state through the poll
+      }
+      briefPollCountRef.current = 0;
+
       if (!response.ok) {
         setBriefError(data.error || `API error ${response.status}. Please try again.`);
         setBriefLoading(false);
@@ -426,10 +456,26 @@ export default function PHIOS() {
     setBriefLoading(false);
   };
 
-  const addJournalEntry = () => {
+  const addJournalEntry = async () => {
     if (!journalForm.ticker || !journalForm.thesis) return;
-    setJournalEntries(prev => [{ ...journalForm, date: new Date().toLocaleDateString(), id: Date.now() }, ...prev]);
+    const formToSave = journalForm;
     setJournalForm({ ticker: "", decision: "BUY", price: "", fibLevel: "", iws: "", thesis: "" });
+
+    try {
+      const res = await fetch("/api/journal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formToSave),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setJournalEntries(data.entries || []);
+      } else {
+        console.error("Journal save error:", data.error);
+      }
+    } catch (e) {
+      console.error("Journal save error:", e);
+    }
   };
 
   return (

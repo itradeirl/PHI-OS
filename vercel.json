@@ -1,0 +1,40 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "fluid": true,
+  "crons": [
+    { "path": "/api/cron/market-open", "schedule": "30 9 * * 1-5" },
+    { "path": "/api/cron/midday", "schedule": "0 12 * * 1-5" },
+    { "path": "/api/cron/market-close", "schedule": "0 16 * * 1-5" },
+    { "path": "/api/cron/sunday-war-room", "schedule": "0 8 * * 0" }
+  ],
+  "functions": {
+    "api/brief.js": {
+      "includeFiles": "{lib/**,node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**}",
+      "maxDuration": 300
+    },
+    "api/cron/market-open.js": {
+      "includeFiles": "{lib/**,node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**}",
+      "maxDuration": 300
+    },
+    "api/cron/midday.js": {
+      "includeFiles": "{lib/**,node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**}",
+      "maxDuration": 300
+    },
+    "api/cron/market-close.js": {
+      "includeFiles": "{lib/**,node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**}",
+      "maxDuration": 300
+    },
+    "api/cron/sunday-war-room.js": {
+      "includeFiles": "{lib/**,node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**}",
+      "maxDuration": 300
+    },
+    "api/internal/run-omega.js": {
+      "includeFiles": "{lib/**,node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**}",
+      "maxDuration": 300
+    },
+    "api/internal/compile.js": {
+      "includeFiles": "{lib/**,node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**}",
+      "maxDuration": 300
+    }
+  }
+}
