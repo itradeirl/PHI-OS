@@ -2,10 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "fluid": true,
   "crons": [
-    { "path": "/api/cron/market-open", "schedule": "30 9 * * 1-5" },
-    { "path": "/api/cron/midday", "schedule": "0 12 * * 1-5" },
-    { "path": "/api/cron/market-close", "schedule": "0 16 * * 1-5" },
-    { "path": "/api/cron/sunday-war-room", "schedule": "0 8 * * 0" }
+    { "path": "/api/cron/market-open", "schedule": "30 13 * * 1-5" },
+    { "path": "/api/cron/midday", "schedule": "0 16 * * 1-5" },
+    { "path": "/api/cron/market-close", "schedule": "0 20 * * 1-5" },
+    { "path": "/api/cron/sunday-war-room", "schedule": "0 12 * * 0" }
   ],
   "functions": {
     "api/brief.js": {

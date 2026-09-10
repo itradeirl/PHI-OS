@@ -200,6 +200,9 @@ export default function PHIOS() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [journalEntries, setJournalEntries] = useState([]);
   const [journalForm, setJournalForm] = useState({ ticker: "", decision: "BUY", price: "", fibLevel: "", iws: "", thesis: "" });
+  const [closingEntryId, setClosingEntryId] = useState(null);
+  const [exitPriceInput, setExitPriceInput] = useState("");
+  const [closingEntry, setClosingEntry] = useState(false);
   const [morningBrief, setMorningBrief] = useState(null);
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefError, setBriefError] = useState(null);
@@ -476,6 +479,29 @@ export default function PHIOS() {
     } catch (e) {
       console.error("Journal save error:", e);
     }
+  };
+
+  const closeJournalEntry = async (id) => {
+    if (!exitPriceInput || isNaN(Number(exitPriceInput))) return;
+    setClosingEntry(true);
+    try {
+      const res = await fetch("/api/journal", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, exitPrice: exitPriceInput }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setJournalEntries(data.entries || []);
+        setClosingEntryId(null);
+        setExitPriceInput("");
+      } else {
+        console.error("Journal close error:", data.error);
+      }
+    } catch (e) {
+      console.error("Journal close error:", e);
+    }
+    setClosingEntry(false);
   };
 
   return (
@@ -834,6 +860,21 @@ export default function PHIOS() {
           {nav === "journal" && (
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 14 }}>PHI Decision Journal</div>
+              {(() => {
+                const closed = journalEntries.filter(e => e.status === "closed");
+                const wins = closed.filter(e => e.outcome === "win").length;
+                const winRate = closed.length ? Math.round((wins / closed.length) * 100) : null;
+                const totalPnl = closed.reduce((sum, e) => sum + (e.pnlDollar || 0), 0);
+                const openCount = journalEntries.filter(e => e.status === "open").length;
+                return (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+                    <div style={S.card}><div style={S.statLabel}>Open Positions</div><div style={S.statVal}>{openCount}</div></div>
+                    <div style={S.card}><div style={S.statLabel}>Closed Trades</div><div style={S.statVal}>{closed.length}</div></div>
+                    <div style={S.card}><div style={S.statLabel}>Win Rate</div><div style={{ ...S.statVal, color: winRate == null ? "#e2e8f0" : winRate >= 50 ? "#4ade80" : "#f87171" }}>{winRate == null ? "—" : `${winRate}%`}</div></div>
+                    <div style={S.card}><div style={S.statLabel}>Total P&L</div><div style={{ ...S.statVal, color: totalPnl > 0 ? "#4ade80" : totalPnl < 0 ? "#f87171" : "#e2e8f0" }}>{closed.length ? `${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}` : "—"}</div></div>
+                  </div>
+                );
+              })()}
               <div style={{ ...S.card, marginBottom: 14 }}>
                 <div style={S.cardTitle}>Log a Decision</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -861,7 +902,7 @@ export default function PHIOS() {
                 ) : (
                   <table style={S.table}>
                     <thead>
-                      <tr>{["Date","Ticker","Decision","Price","Fib Level","IWS","Thesis"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+                      <tr>{["Date","Ticker","Decision","Price","Fib Level","IWS","Thesis","Status","P&L"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
                     </thead>
                     <tbody>
                       {journalEntries.map(e => (
@@ -873,6 +914,24 @@ export default function PHIOS() {
                           <td style={{ ...S.td, color: "#64748b" }}>{e.fibLevel || "—"}</td>
                           <td style={{ ...S.td, color: "#C9A84C", fontWeight: 600 }}>{e.iws || "—"}</td>
                           <td style={{ ...S.td, color: "#94a3b8", fontSize: 11 }}>{e.thesis}</td>
+                          <td style={S.td}>
+                            {e.status === "open" && closingEntryId === e.id ? (
+                              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                <input placeholder="Exit $" type="number" style={{ ...S.input, width: 70, padding: "3px 6px" }} value={exitPriceInput} onChange={ev => setExitPriceInput(ev.target.value)} />
+                                <button disabled={closingEntry} onClick={() => closeJournalEntry(e.id)} style={{ background: "#4ade80", border: "none", borderRadius: 4, padding: "3px 8px", color: "#0a0e1a", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✓</button>
+                                <button onClick={() => { setClosingEntryId(null); setExitPriceInput(""); }} style={{ background: "transparent", border: "1px solid #334155", borderRadius: 4, padding: "3px 8px", color: "#64748b", fontSize: 10, cursor: "pointer" }}>✕</button>
+                              </div>
+                            ) : e.status === "open" ? (
+                              <button onClick={() => { setClosingEntryId(e.id); setExitPriceInput(""); }} style={{ background: "transparent", border: "1px solid #C9A84C44", borderRadius: 4, padding: "3px 8px", color: "#C9A84C", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>CLOSE</button>
+                            ) : e.status === "closed" ? (
+                              <span style={S.badge(e.outcome === "win" ? "#4ade80" : e.outcome === "loss" ? "#f87171" : "#94a3b8")}>CLOSED</span>
+                            ) : (
+                              <span style={{ color: "#334155" }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ ...S.td, fontWeight: 700, color: e.pnlPercent == null ? "#334155" : e.pnlPercent > 0 ? "#4ade80" : e.pnlPercent < 0 ? "#f87171" : "#94a3b8" }}>
+                            {e.pnlPercent != null ? `${e.pnlPercent > 0 ? "+" : ""}${e.pnlPercent}% (${e.pnlDollar > 0 ? "+" : ""}$${e.pnlDollar})` : "—"}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
