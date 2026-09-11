@@ -1,10 +1,13 @@
-import { get, put } from "@vercel/blob";
+import { put } from "@vercel/blob";
+import { readJournalEntries } from "../lib/chief-of-staff/journal-store.js";
 
 // Stores the PHI Log (trading journal) as one JSON file in the same Vercel
 // Blob store already used for briefs — GET reads the current list, POST
 // appends a new entry, PATCH closes an existing one with an exit price and
 // computes P&L. Every entry starts "open"; only BUY/SELL entries (actual
-// positions, not WATCH/WAIT notes) are ever closeable.
+// positions, not WATCH/WAIT notes) are ever closeable. The read path is
+// shared with lib/chief-of-staff/active-positions.js, which feeds open
+// entries to SPIRA for extension-level exit tracking.
 
 const JOURNAL_PATH = "journal/entries.json";
 const CLOSEABLE_DECISIONS = ["BUY", "SELL"];
@@ -15,7 +18,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === "GET") {
-      const entries = await readEntries();
+      const entries = await readJournalEntries();
       res.status(200).json({ entries });
       return;
     }
@@ -27,7 +30,7 @@ export default async function handler(req, res) {
         return;
       }
 
-      const entries = await readEntries();
+      const entries = await readJournalEntries();
       const decision = incoming.decision || "BUY";
       const entry = {
         ticker: incoming.ticker,
@@ -60,7 +63,7 @@ export default async function handler(req, res) {
         return;
       }
 
-      const entries = await readEntries();
+      const entries = await readJournalEntries();
       const entry = entries.find((e) => e.id === id);
       if (!entry) {
         res.status(404).json({ error: "Journal entry not found." });
@@ -93,33 +96,6 @@ export default async function handler(req, res) {
     res.status(405).json({ error: "Use GET, POST, or PATCH" });
   } catch (err) {
     res.status(500).json({ error: "Journal storage error: " + err.message });
-  }
-}
-
-async function readEntries() {
-  try {
-    const result = await get(JOURNAL_PATH, {
-      access: "private",
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-      useCache: false,
-    });
-    if (!result || result.statusCode !== 200) return [];
-    const text = await new Response(result.stream).text();
-    const entries = JSON.parse(text);
-    // Entries logged before exit-tracking existed won't have these fields —
-    // backfill so the frontend never has to special-case old rows.
-    return entries.map((e) => ({
-      status: e.status ?? (CLOSEABLE_DECISIONS.includes(e.decision) && e.price ? "open" : "n/a"),
-      exitPrice: e.exitPrice ?? null,
-      exitDate: e.exitDate ?? null,
-      pnlDollar: e.pnlDollar ?? null,
-      pnlPercent: e.pnlPercent ?? null,
-      holdingDays: e.holdingDays ?? null,
-      outcome: e.outcome ?? null,
-      ...e,
-    }));
-  } catch {
-    return [];
   }
 }
 
