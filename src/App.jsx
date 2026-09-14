@@ -504,6 +504,25 @@ export default function PHIOS() {
     setClosingEntry(false);
   };
 
+  const deleteJournalEntry = async (id) => {
+    if (!window.confirm("Delete this journal entry? This can't be undone.")) return;
+    try {
+      const res = await fetch("/api/journal", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setJournalEntries(data.entries || []);
+      } else {
+        console.error("Journal delete error:", data.error);
+      }
+    } catch (e) {
+      console.error("Journal delete error:", e);
+    }
+  };
+
   return (
     <div style={S.app}>
       {/* SIDEBAR */}
@@ -902,7 +921,7 @@ export default function PHIOS() {
                 ) : (
                   <table style={S.table}>
                     <thead>
-                      <tr>{["Date","Ticker","Decision","Price","Fib Level","IWS","Thesis","Status","P&L"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+                      <tr>{["Date","Ticker","Decision","Price","Fib Level","IWS","Thesis","Status","P&L",""].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
                     </thead>
                     <tbody>
                       {journalEntries.map(e => (
@@ -931,6 +950,9 @@ export default function PHIOS() {
                           </td>
                           <td style={{ ...S.td, fontWeight: 700, color: e.pnlPercent == null ? "#334155" : e.pnlPercent > 0 ? "#4ade80" : e.pnlPercent < 0 ? "#f87171" : "#94a3b8" }}>
                             {e.pnlPercent != null ? `${e.pnlPercent > 0 ? "+" : ""}${e.pnlPercent}% (${e.pnlDollar > 0 ? "+" : ""}$${e.pnlDollar})` : "—"}
+                          </td>
+                          <td style={S.td}>
+                            <button onClick={() => deleteJournalEntry(e.id)} title="Delete entry" style={{ background: "transparent", border: "1px solid #f8717144", borderRadius: 4, padding: "3px 8px", color: "#f87171", fontSize: 10, cursor: "pointer" }}>🗑</button>
                           </td>
                         </tr>
                       ))}

@@ -4,10 +4,12 @@ import { readJournalEntries } from "../lib/chief-of-staff/journal-store.js";
 // Stores the PHI Log (trading journal) as one JSON file in the same Vercel
 // Blob store already used for briefs — GET reads the current list, POST
 // appends a new entry, PATCH closes an existing one with an exit price and
-// computes P&L. Every entry starts "open"; only BUY/SELL entries (actual
-// positions, not WATCH/WAIT notes) are ever closeable. The read path is
-// shared with lib/chief-of-staff/active-positions.js, which feeds open
-// entries to SPIRA for extension-level exit tracking.
+// computes P&L, DELETE removes an entry outright. Every entry starts "open";
+// only BUY/SELL entries (actual positions, not WATCH/WAIT notes) are ever
+// closeable. Entries persist indefinitely until explicitly deleted — there
+// is no auto-expiry. The read path is shared with
+// lib/chief-of-staff/active-positions.js, which feeds open entries to SPIRA
+// for extension-level exit tracking.
 
 const JOURNAL_PATH = "journal/entries.json";
 const CLOSEABLE_DECISIONS = ["BUY", "SELL"];
@@ -93,7 +95,26 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.status(405).json({ error: "Use GET, POST, or PATCH" });
+    if (req.method === "DELETE") {
+      const { id } = req.body || {};
+      if (!id) {
+        res.status(400).json({ error: "An entry id is required." });
+        return;
+      }
+
+      const entries = await readJournalEntries();
+      const remaining = entries.filter((e) => e.id !== id);
+      if (remaining.length === entries.length) {
+        res.status(404).json({ error: "Journal entry not found." });
+        return;
+      }
+
+      await writeEntries(remaining);
+      res.status(200).json({ entries: remaining });
+      return;
+    }
+
+    res.status(405).json({ error: "Use GET, POST, PATCH, or DELETE" });
   } catch (err) {
     res.status(500).json({ error: "Journal storage error: " + err.message });
   }
