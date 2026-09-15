@@ -2,10 +2,13 @@
 // never reaches the browser. Default voice: "Marcos" (Warm, Direct and
 // Professional). Change MARCOS_VOICE_ID below to switch voices.
 
+import { requireAuth } from "../lib/auth.js";
+
 const VOICE_ID = "MjDkeH2x9hCiWKXZtUPc"; // Marcos
 const MODEL_ID = "eleven_flash_v2_5"; // cheaper/faster tier, good quality
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
   if (req.method !== "POST") {
     res.status(405).json({ error: "Use POST" });
     return;

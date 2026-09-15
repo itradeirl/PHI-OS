@@ -1,5 +1,5 @@
-import { put } from "@vercel/blob";
-import { readJournalEntries } from "../lib/chief-of-staff/journal-store.js";
+import { readJournalEntries, writeEntries } from "../lib/chief-of-staff/journal-store.js";
+import { requireAuth } from "../lib/auth.js";
 
 // Stores the PHI Log (trading journal) as one JSON file in the same Vercel
 // Blob store already used for briefs — GET reads the current list, POST
@@ -11,12 +11,12 @@ import { readJournalEntries } from "../lib/chief-of-staff/journal-store.js";
 // lib/chief-of-staff/active-positions.js, which feeds open entries to SPIRA
 // for extension-level exit tracking.
 
-const JOURNAL_PATH = "journal/entries.json";
 const CLOSEABLE_DECISIONS = ["BUY", "SELL"];
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
+  if (!requireAuth(req, res)) return;
 
   try {
     if (req.method === "GET") {
@@ -118,14 +118,4 @@ export default async function handler(req, res) {
   } catch (err) {
     res.status(500).json({ error: "Journal storage error: " + err.message });
   }
-}
-
-async function writeEntries(entries) {
-  await put(JOURNAL_PATH, JSON.stringify(entries), {
-    access: "private",
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: "application/json",
-  });
 }

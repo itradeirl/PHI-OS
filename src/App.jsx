@@ -116,11 +116,18 @@ const NAV = [
   { id: "settings", label: "SETTINGS", icon: "⚙" },
 ];
 
-function DonutChart({ portfolioValue }) {
+function DonutChart({ portfolioValue, cashPercent }) {
+  // Options/Real Estate/Crypto stay as fixed placeholders — Schwab's basic
+  // account balance doesn't break holdings out by asset class, so there's
+  // no real data to put there. When a real cashPercent is known, only Cash
+  // and Stocks (the two Schwab-derivable segments) get recomputed around it.
+  const otherPct = 12.1 + 3.1 + 1.6;
+  const realCash = cashPercent != null ? cashPercent : 15.0;
+  const realStocks = cashPercent != null ? Math.max(0, 100 - otherPct - realCash) : 68.2;
   const segments = [
-    { label: "Stocks", pct: 68.2, color: "#1e40af" },
+    { label: "Stocks", pct: realStocks, color: "#1e40af" },
     { label: "Options", pct: 12.1, color: "#C9A84C" },
-    { label: "Cash", pct: 15.0, color: "#334155" },
+    { label: "Cash", pct: realCash, color: "#334155" },
     { label: "Real Estate", pct: 3.1, color: "#4ade80" },
     { label: "Crypto", pct: 1.6, color: "#a78bfa" },
   ];
@@ -145,7 +152,7 @@ function DonutChart({ portfolioValue }) {
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color }} />
             <span style={{ fontSize: 11, color: "#94a3b8" }}>{s.label}</span>
-            <span style={{ fontSize: 11, color: "#e2e8f0", marginLeft: "auto", paddingLeft: 12 }}>{s.pct}%</span>
+            <span style={{ fontSize: 11, color: "#e2e8f0", marginLeft: "auto", paddingLeft: 12 }}>{s.pct.toFixed(1)}%</span>
           </div>
         ))}
       </div>
@@ -210,6 +217,11 @@ export default function PHIOS() {
   const [isPaused, setIsPaused] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [dataError, setDataError] = useState(null);
+  const [schwabStatus, setSchwabStatus] = useState({ connected: false, needsReconnect: false });
+  const [schwabAccount, setSchwabAccount] = useState(null);
+  const [schwabSyncing, setSchwabSyncing] = useState(false);
+  const [schwabSyncMessage, setSchwabSyncMessage] = useState(null);
+  const [schwabBanner, setSchwabBanner] = useState(null);
   const audioRef = useRef(null);
   const briefPollCountRef = useRef(0);
 
@@ -341,6 +353,85 @@ export default function PHIOS() {
       .then(data => setJournalEntries(data.entries || []))
       .catch(e => console.error("Journal fetch error:", e));
   }, []);
+
+  const fetchSchwabAccount = useCallback(() => {
+    fetch("/api/schwab/account")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setSchwabAccount(data))
+      .catch(e => console.error("Schwab account fetch error:", e));
+  }, []);
+
+  const fetchSchwabStatus = useCallback(() => {
+    fetch("/api/schwab/status")
+      .then(r => r.json())
+      .then(data => {
+        setSchwabStatus(data);
+        if (data.connected) fetchSchwabAccount();
+      })
+      .catch(e => console.error("Schwab status fetch error:", e));
+  }, [fetchSchwabAccount]);
+
+  // Schwab's OAuth callback redirects back here with ?schwab=connected or
+  // =error — surface a one-time banner, then clean the query param off the
+  // URL so a refresh doesn't re-show it.
+  useEffect(() => {
+    fetchSchwabStatus();
+    const params = new URLSearchParams(window.location.search);
+    const schwabResult = params.get("schwab");
+    if (schwabResult) {
+      setSchwabBanner(schwabResult === "connected" ? "Schwab connected." : "Schwab connection failed — try again.");
+      params.delete("schwab");
+      const cleanUrl = window.location.pathname + (params.toString() ? `?${params}` : "");
+      window.history.replaceState({}, "", cleanUrl);
+    }
+  }, [fetchSchwabStatus]);
+
+  const logOut = async () => {
+    try {
+      await fetch("/api/login", { method: "DELETE" });
+    } catch (e) {
+      console.error("Logout error:", e);
+    }
+    window.location.reload();
+  };
+
+  const connectSchwab = () => {
+    window.location.href = "/api/schwab/authorize";
+  };
+
+  const disconnectSchwab = async () => {
+    if (!window.confirm("Disconnect PHI OS from your Schwab account?")) return;
+    try {
+      await fetch("/api/schwab/disconnect", { method: "POST" });
+      setSchwabAccount(null);
+      fetchSchwabStatus();
+    } catch (e) {
+      console.error("Schwab disconnect error:", e);
+    }
+  };
+
+  const syncSchwabTrades = async () => {
+    setSchwabSyncing(true);
+    setSchwabSyncMessage(null);
+    try {
+      const res = await fetch("/api/schwab/sync", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setSchwabSyncMessage(`Imported ${data.imported} new trade${data.imported === 1 ? "" : "s"}.`);
+        fetch("/api/journal")
+          .then(r => r.json())
+          .then(d => setJournalEntries(d.entries || []))
+          .catch(e => console.error("Journal fetch error:", e));
+        fetchSchwabAccount();
+      } else {
+        setSchwabSyncMessage(data.error || "Sync failed.");
+        fetchSchwabStatus();
+      }
+    } catch (e) {
+      setSchwabSyncMessage("Sync failed: " + e.message);
+    }
+    setSchwabSyncing(false);
+  };
 
   // Load (or, if none exists yet for right now, generate) today's brief as
   // soon as the dashboard opens, instead of requiring a manual click.
@@ -581,8 +672,18 @@ export default function PHIOS() {
             <div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 14 }}>
                 {[
-                  { label: "Portfolio Value", val: "$248,362", sub: "+1.35% Today", subColor: "#4ade80" },
-                  { label: "Cash Available", val: "$37,247", sub: "15.0% of Portfolio", subColor: "#64748b" },
+                  {
+                    label: "Portfolio Value",
+                    val: schwabStatus.connected && schwabAccount ? `$${schwabAccount.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "$248,362",
+                    sub: schwabStatus.connected && schwabAccount ? "Live from Schwab" : "+1.35% Today (not connected)",
+                    subColor: "#4ade80",
+                  },
+                  {
+                    label: "Cash Available",
+                    val: schwabStatus.connected && schwabAccount ? `$${schwabAccount.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "$37,247",
+                    sub: schwabStatus.connected && schwabAccount ? `${schwabAccount.cashPercent.toFixed(1)}% of Portfolio` : "15.0% of Portfolio (not connected)",
+                    subColor: "#64748b",
+                  },
                   { label: "Monthly Passive", val: "$4,650", sub: "Goal: $20,000", subColor: "#64748b" },
                   { label: "Portfolio Health", val: `${avgIWS}/100`, sub: "Very Strong", subColor: "#4ade80" },
                   { label: "Near Fib Zones", val: fibZoneStocks.length.toString(), sub: "Within 5% of entry", subColor: "#C9A84C" },
@@ -606,7 +707,10 @@ export default function PHIOS() {
                 </div>
                 <div style={S.card}>
                   <div style={S.cardTitle}>Portfolio Allocation</div>
-                  <DonutChart portfolioValue={248362} />
+                  <DonutChart
+                    portfolioValue={schwabStatus.connected && schwabAccount ? schwabAccount.totalValue : 248362}
+                    cashPercent={schwabStatus.connected && schwabAccount ? schwabAccount.cashPercent : null}
+                  />
                 </div>
               </div>
 
@@ -844,33 +948,63 @@ export default function PHIOS() {
           {nav === "portfolio" && (
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 14 }}>PHI Portfolio Tracker</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
-                {[
-                  { label: "Portfolio Value", val: "$248,362", sub: "Add positions to track live", subColor: "#C9A84C" },
-                  { label: "Cash Position", val: "$37,247", sub: "15.0% — Ready to deploy", subColor: "#4ade80" },
-                  { label: "2036 Goal Progress", val: "49.7%", sub: "Toward $500,000", subColor: "#60a5fa" },
-                ].map((s, i) => (
-                  <div key={i} style={S.card}>
-                    <div style={S.statLabel}>{s.label}</div>
-                    <div style={S.statVal}>{s.val}</div>
-                    <div style={{ fontSize: 11, color: s.subColor, marginTop: 3 }}>{s.sub}</div>
+              {(() => {
+                const connected = schwabStatus.connected && schwabAccount;
+                const totalValue = connected ? schwabAccount.totalValue : 248362;
+                const cash = connected ? schwabAccount.cash : 37247;
+                const cashPct = connected ? schwabAccount.cashPercent : 15.0;
+                const goalPct = (totalValue / 500000) * 100;
+                return (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
+                    {[
+                      { label: "Portfolio Value", val: `$${totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, sub: connected ? "Live from Schwab" : "Connect Schwab in Settings", subColor: "#C9A84C" },
+                      { label: "Cash Position", val: `$${cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, sub: `${cashPct.toFixed(1)}% — Ready to deploy`, subColor: "#4ade80" },
+                      { label: "2036 Goal Progress", val: `${goalPct.toFixed(1)}%`, sub: "Toward $500,000", subColor: "#60a5fa" },
+                    ].map((s, i) => (
+                      <div key={i} style={S.card}>
+                        <div style={S.statLabel}>{s.label}</div>
+                        <div style={S.statVal}>{s.val}</div>
+                        <div style={{ fontSize: 11, color: s.subColor, marginTop: 3 }}>{s.sub}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
               <div style={S.card}>
-                <div style={{ textAlign: "center", padding: "28px 0 20px" }}>
-                  <div style={{ fontSize: 28, color: "#C9A84C44", marginBottom: 8 }}>Φ</div>
-                  <div style={{ color: "#C9A84C", fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Ready for your Schwab positions</div>
-                  <div style={{ fontSize: 11, color: "#475569" }}>Add your holdings to track live performance toward your 2036 goals.</div>
-                </div>
-                <table style={S.table}>
-                  <thead>
-                    <tr>{["Ticker","Company","Shares","Avg Cost","Current Price","Market Value","Gain/Loss $","Gain/Loss %","Target %","Notes"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    <tr>{Array(10).fill(null).map((_, i) => <td key={i} style={{ ...S.td, color: "#1e293b", textAlign: "center" }}>—</td>)}</tr>
-                  </tbody>
-                </table>
+                {!schwabStatus.connected || !schwabAccount || schwabAccount.positions.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "28px 0 20px" }}>
+                    <div style={{ fontSize: 28, color: "#C9A84C44", marginBottom: 8 }}>Φ</div>
+                    <div style={{ color: "#C9A84C", fontWeight: 600, marginBottom: 6, fontSize: 13 }}>
+                      {schwabStatus.connected ? "No open positions" : "Ready for your Schwab positions"}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#475569" }}>
+                      {schwabStatus.connected ? "Your connected Schwab account currently holds no open positions." : "Connect your Schwab account in Settings to track live performance toward your 2036 goals."}
+                    </div>
+                  </div>
+                ) : (
+                  <table style={S.table}>
+                    <thead>
+                      <tr>{["Ticker","Company","Shares","Avg Cost","Market Value","Day P&L $","Day P&L %","Target %"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {schwabAccount.positions.map(p => {
+                        const meta = BASE_WATCHLIST.find(w => w.ticker === p.ticker);
+                        return (
+                          <tr key={p.ticker}>
+                            <td style={{ ...S.td, color: "#C9A84C", fontWeight: 800 }}>{p.ticker}</td>
+                            <td style={{ ...S.td, color: "#94a3b8", fontSize: 11 }}>{meta ? meta.company.split(" ").slice(0, 2).join(" ") : "—"}</td>
+                            <td style={S.td}>{p.quantity}</td>
+                            <td style={S.td}>${p.avgPrice.toFixed(2)}</td>
+                            <td style={S.td}>${p.marketValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                            <td style={{ ...S.td, fontWeight: 700, color: p.dayPL > 0 ? "#4ade80" : p.dayPL < 0 ? "#f87171" : "#94a3b8" }}>{p.dayPL >= 0 ? "+" : ""}${p.dayPL.toFixed(2)}</td>
+                            <td style={{ ...S.td, fontWeight: 700, color: p.dayPLPercent > 0 ? "#4ade80" : p.dayPLPercent < 0 ? "#f87171" : "#94a3b8" }}>{p.dayPLPercent >= 0 ? "+" : ""}{p.dayPLPercent.toFixed(2)}%</td>
+                            <td style={{ ...S.td, color: "#64748b" }}>{meta ? `${(meta.position * 100).toFixed(0)}%` : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           )}
@@ -878,7 +1012,22 @@ export default function PHIOS() {
           {/* PHI LOG */}
           {nav === "journal" && (
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", marginBottom: 14 }}>PHI Decision Journal</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0" }}>PHI Decision Journal</div>
+                {schwabBanner && <span style={{ fontSize: 11, color: schwabBanner.startsWith("Schwab connected") ? "#4ade80" : "#f87171" }}>{schwabBanner}</span>}
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+                  {schwabSyncMessage && <span style={{ fontSize: 11, color: "#64748b" }}>{schwabSyncMessage}</span>}
+                  {schwabStatus.connected ? (
+                    <button disabled={schwabSyncing} onClick={syncSchwabTrades} style={{ background: "transparent", border: "1px solid #C9A84C44", borderRadius: 6, padding: "6px 14px", color: "#C9A84C", fontSize: 11, fontWeight: 700, cursor: schwabSyncing ? "default" : "pointer", opacity: schwabSyncing ? 0.6 : 1 }}>
+                      {schwabSyncing ? "Syncing…" : "Sync Schwab Trades"}
+                    </button>
+                  ) : (
+                    <button onClick={() => setNav("settings")} style={{ background: "transparent", border: "1px solid #33415588", borderRadius: 6, padding: "6px 14px", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                      {schwabStatus.needsReconnect ? "Reconnect Schwab in Settings" : "Connect Schwab in Settings"}
+                    </button>
+                  )}
+                </div>
+              </div>
               {(() => {
                 const closed = journalEntries.filter(e => e.status === "closed");
                 const wins = closed.filter(e => e.outcome === "win").length;
@@ -927,12 +1076,15 @@ export default function PHIOS() {
                       {journalEntries.map(e => (
                         <tr key={e.id}>
                           <td style={{ ...S.td, color: "#475569", fontSize: 11 }}>{e.date}</td>
-                          <td style={{ ...S.td, color: "#C9A84C", fontWeight: 800 }}>{e.ticker}</td>
+                          <td style={{ ...S.td, color: "#C9A84C", fontWeight: 800 }}>
+                            {e.ticker}
+                            {e.source === "schwab" && <span title="Synced from Schwab" style={{ marginLeft: 6, fontSize: 8, fontWeight: 700, color: "#64748b", border: "1px solid #334155", borderRadius: 3, padding: "1px 4px" }}>SCHWAB</span>}
+                          </td>
                           <td style={S.td}><span style={S.badge(getDecisionColor(e.decision))}>{e.decision}</span></td>
                           <td style={S.td}>{e.price ? `$${e.price}` : "—"}</td>
                           <td style={{ ...S.td, color: "#64748b" }}>{e.fibLevel || "—"}</td>
                           <td style={{ ...S.td, color: "#C9A84C", fontWeight: 600 }}>{e.iws || "—"}</td>
-                          <td style={{ ...S.td, color: "#94a3b8", fontSize: 11 }}>{e.thesis}</td>
+                          <td style={{ ...S.td, color: "#94a3b8", fontSize: 11 }}>{e.thesis || "—"}</td>
                           <td style={S.td}>
                             {e.status === "open" && closingEntryId === e.id ? (
                               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -1103,7 +1255,32 @@ export default function PHIOS() {
                   </div>
                 </div>
                 <div style={{ ...S.card, gridColumn: "span 2" }}>
-                  <div style={S.cardTitle}>System Info</div>
+                  <div style={S.cardTitle}>Schwab Connection</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: schwabStatus.connected ? "#4ade80" : "#f87171", boxShadow: `0 0 6px ${schwabStatus.connected ? "#4ade80" : "#f87171"}` }} />
+                    <span style={{ fontSize: 12, color: schwabStatus.connected ? "#4ade80" : "#f87171", fontWeight: 600 }}>
+                      {schwabStatus.connected ? "Schwab — Connected" : schwabStatus.needsReconnect ? "Schwab — Reconnect Needed" : "Schwab — Not Connected"}
+                    </span>
+                    {schwabStatus.connectedAt && (
+                      <span style={{ fontSize: 11, color: "#475569" }}>Since {new Date(schwabStatus.connectedAt).toLocaleDateString()}</span>
+                    )}
+                    <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                      {schwabStatus.connected ? (
+                        <button onClick={disconnectSchwab} style={{ background: "transparent", border: "1px solid #f8717144", borderRadius: 4, padding: "5px 10px", color: "#f87171", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Disconnect</button>
+                      ) : (
+                        <button onClick={connectSchwab} style={{ background: "#C9A84C", border: "none", borderRadius: 4, padding: "5px 10px", color: "#0a0e1a", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{schwabStatus.needsReconnect ? "Reconnect" : "Connect"}</button>
+                      )}
+                    </div>
+                  </div>
+                  {schwabStatus.needsReconnect && (
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>Schwab requires reconnecting about once a week — this is a limit on their end, not a bug.</div>
+                  )}
+                </div>
+                <div style={{ ...S.card, gridColumn: "span 2" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={S.cardTitle}>System Info</div>
+                    <button onClick={logOut} style={{ background: "transparent", border: "1px solid #33415588", borderRadius: 4, padding: "5px 10px", color: "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Log Out</button>
+                  </div>
                   <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
                     {[["Founder","Indygo Tiffany"],["Title","Chief Vision Officer"],["System","PHI OS"],["Version","4.0 Master Build"],["AI","OpenRouter · Claude 3 Haiku"]].map(([l, v]) => (
                       <div key={l}>

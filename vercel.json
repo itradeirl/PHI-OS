@@ -5,7 +5,16 @@
     { "path": "/api/cron/market-open", "schedule": "30 13 * * 1-5" },
     { "path": "/api/cron/midday", "schedule": "0 16 * * 1-5" },
     { "path": "/api/cron/market-close", "schedule": "0 20 * * 1-5" },
-    { "path": "/api/cron/sunday-war-room", "schedule": "0 12 * * 0" }
+    { "path": "/api/cron/sunday-war-room", "schedule": "0 12 * * 0" },
+    { "path": "/api/schwab-router?action=cron-sync", "schedule": "15 20 * * 1-5" }
+  ],
+  "rewrites": [
+    { "source": "/api/schwab/authorize", "destination": "/api/schwab-router?action=authorize" },
+    { "source": "/api/schwab/callback", "destination": "/api/schwab-router?action=callback" },
+    { "source": "/api/schwab/status", "destination": "/api/schwab-router?action=status" },
+    { "source": "/api/schwab/account", "destination": "/api/schwab-router?action=account" },
+    { "source": "/api/schwab/sync", "destination": "/api/schwab-router?action=sync" },
+    { "source": "/api/schwab/disconnect", "destination": "/api/schwab-router?action=disconnect" }
   ],
   "functions": {
     "api/brief.js": {
@@ -35,6 +44,7 @@
     "api/internal/compile.js": {
       "includeFiles": "{lib/**,node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**}",
       "maxDuration": 300
-    }
+    },
+    "api/schwab-router.js": { "includeFiles": "lib/**", "maxDuration": 60 }
   }
 }

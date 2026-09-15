@@ -4,6 +4,7 @@ import { runAgentsPhase } from "../lib/chief-of-staff/run-routine.js";
 import { continueTo } from "../lib/chief-of-staff/continue-chain.js";
 import { readRunStatus, isRunInFlight } from "../lib/chief-of-staff/run-status.js";
 import { inferExpectedTrigger, todayETDateStamp } from "../lib/chief-of-staff/expected-routine.js";
+import { isAuthenticatedFetch } from "../lib/auth.js";
 
 // Reads the most recent brief from Vercel Blob storage. If none exists yet
 // for today's expected routine (the on-demand fallback), triggers real
@@ -29,6 +30,7 @@ function json(body, status = 200) {
 
 export default {
   async fetch(request) {
+    if (!isAuthenticatedFetch(request)) return json({ error: "Not authenticated" }, 401);
     try {
       const { blobs } = await list({ prefix: "briefs/" });
 

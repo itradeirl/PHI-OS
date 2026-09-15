@@ -2,12 +2,15 @@
 // the browser. Set FINNHUB_KEY as an environment variable on this Vercel
 // project (and in .env.local for local dev) — never hardcode it here.
 
+import { requireAuth } from "../lib/auth.js";
+
 const BASE = "https://finnhub.io/api/v1";
 
 export default async function handler(req, res) {
   // Live prices must never be served stale from a cache — same fix as api/brief.js.
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
+  if (!requireAuth(req, res)) return;
 
   const FINNHUB_KEY = process.env.FINNHUB_KEY;
   if (!FINNHUB_KEY) {
